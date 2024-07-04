@@ -1,13 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from telethon import TelegramClient, functions, types
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 
 app = FastAPI()
 
 session_file_path = 'session_name'
-
-client = ''
 
 class PhoneNumber(BaseModel):
     phone: str
@@ -25,28 +24,61 @@ class StoryRequest(BaseModel):
     spoiler: bool = True
     ttl_seconds: int = 42
 
+class TelegramClientManager:
+    def __init__(self):
+        self.client = None
+        self.app_id = None
+        self.app_hash = None
+
+    async def get_client(self):
+        if not self.client:
+            raise HTTPException(status_code=400, detail="Client not initialized")
+        return self.client
+
+    async def initialize_client(self, app_id: int, app_hash: str):
+        if self.client:
+            await self.client.disconnect()
+        self.app_id = app_id
+        self.app_hash = app_hash
+        self.client = TelegramClient(session_file_path, app_id, app_hash)
+        await self.client.connect()
+
+    async def disconnect(self):
+        if self.client:
+            await self.client.disconnect()
+
+client_manager = TelegramClientManager()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await client_manager.disconnect()
+
+app = FastAPI(lifespan=lifespan)
+
+async def get_client():
+    return await client_manager.get_client()
+
 @app.post("/generate_otp")
 async def generate_otp(phone_number: PhoneNumber):
     try:
-        client = TelegramClient(session_file_path, phone_number.app_id, phone_number.app_hash)
-        await client.connect()
+        await client_manager.initialize_client(phone_number.app_id, phone_number.app_hash)
+        client = await get_client()
         result = await client.send_code_request(phone_number.phone, force_sms=True)
-        phone_hash = result.phone_code_hash
-        await client.disconnect()
-        return {"phone_code_hash": phone_hash}
+        return {"phone_code_hash": result.phone_code_hash}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/verify_otp")
 async def verify_otp(otp_verification: OTPVerification):
     try:
+        client = await get_client()
         await client.sign_in(
             otp_verification.phone,
             code=otp_verification.code,
             phone_code_hash=otp_verification.phone_code_hash,
         )
         user = await client.get_me()
-        await client.disconnect()
         return {"message": f"Authenticated as {user.first_name}"}
     except SessionPasswordNeededError:
         raise HTTPException(status_code=401, detail="Two-step verification is enabled. Please provide the password.")
@@ -56,11 +88,10 @@ async def verify_otp(otp_verification: OTPVerification):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/send_story")
-async def send_story(story_request: StoryRequest):
+async def send_story(story_request: StoryRequest, client: TelegramClient = Depends(get_client)):
     try:
         if not await client.is_user_authorized():
             raise HTTPException(status_code=401, detail="Unauthorized. Please authenticate first.")
-
         result = await client(functions.stories.SendStoryRequest(
             peer=story_request.peer,
             media=types.InputMediaUploadedPhoto(
@@ -70,7 +101,6 @@ async def send_story(story_request: StoryRequest):
             ),
             privacy_rules=[types.InputPrivacyValueAllowContacts()]
         ))
-        await client.disconnect()
         return {"message": "Story sent successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
