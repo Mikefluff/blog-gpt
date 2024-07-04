@@ -3,6 +3,9 @@ from telethon import TelegramClient, functions, types
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+import shutil
+from uuid import uuid4
+
 
 app = FastAPI()
 
@@ -58,6 +61,33 @@ app = FastAPI(lifespan=lifespan)
 
 async def get_client():
     return await client_manager.get_client()
+
+# Create an uploads directory if it doesn't exist
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Mount the uploads directory
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+@app.post("/upload_image")
+async def upload_image(file: UploadFile = File(...)):
+    try:
+        # Generate a unique filename
+        file_extension = os.path.splitext(file.filename)[1]
+        unique_filename = f"{uuid4()}{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, unique_filename)
+        
+        # Save the file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Generate the URI
+        file_uri = f"/uploads/{unique_filename}"
+        
+        return {"file_uri": file_uri, "message": "Image uploaded successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/generate_otp")
 async def generate_otp(phone_number: PhoneNumber):
