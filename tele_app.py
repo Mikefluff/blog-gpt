@@ -24,7 +24,7 @@ class StoryRequest(BaseModel):
 @app.post("/generate_otp")
 async def generate_otp(phone_number: PhoneNumber):
     try:
-        client = TelegramClient(session_file_path, phone_number.api_id, phone_number.api_hash)
+        client = TelegramClient(session_file_path, phone_number.app_id, phone_number.app_hash)
         await client.connect()
         result = await client.send_code_request(phone_number.phone, force_sms=True)
         phone_hash = result.phone_code_hash
