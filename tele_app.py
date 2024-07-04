@@ -150,9 +150,9 @@ async def send_story(story_request: StoryRequest, client: TelegramClient = Depen
     try:
         if not await client.is_user_authorized():
             raise HTTPException(status_code=401, detail="Unauthorized. Please authenticate first.")
+        me = await client.get_me()    
         result = await client(functions.stories.SendStoryRequest(
-            me = await client.get_me()
-            peer = me.id
+            peer=me.id,
             media=types.InputMediaUploadedPhoto(
                 file=await client.upload_file(story_request.file_path),
                 spoiler=story_request.spoiler,
