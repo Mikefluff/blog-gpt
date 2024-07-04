@@ -5,8 +5,6 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-api_id = 24427750
-api_hash = 'a9aab1745a59b335d046d3a93c025609'
 session_file_path = 'session_name'
 
 class PhoneNumber(BaseModel):
@@ -26,7 +24,7 @@ class StoryRequest(BaseModel):
 @app.post("/generate_otp")
 async def generate_otp(phone_number: PhoneNumber):
     try:
-        client = TelegramClient(session_file_path, api_id, api_hash)
+        client = TelegramClient(session_file_path, phone_number.api_id, phone_number.api_hash)
         await client.connect()
         result = await client.send_code_request(phone_number.phone, force_sms=True)
         phone_hash = result.phone_code_hash
