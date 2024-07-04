@@ -25,7 +25,6 @@ class OTPVerification(BaseModel):
     phone_code_hash: str
 
 class StoryRequest(BaseModel):
-    peer: str
     file_path: str
     spoiler: bool = True
     ttl_seconds: int = 42
@@ -111,7 +110,7 @@ async def upload_image(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
         
         # Generate the URI
-        file_uri = f"/uploads/{unique_filename}"
+        file_uri = f"uploads/{unique_filename}"
         
         return {"file_uri": file_uri, "message": "Image uploaded successfully"}
     except Exception as e:
@@ -152,7 +151,8 @@ async def send_story(story_request: StoryRequest, client: TelegramClient = Depen
         if not await client.is_user_authorized():
             raise HTTPException(status_code=401, detail="Unauthorized. Please authenticate first.")
         result = await client(functions.stories.SendStoryRequest(
-            peer=story_request.peer,
+            me = await client.get_me()
+            peer = me.id
             media=types.InputMediaUploadedPhoto(
                 file=await client.upload_file(story_request.file_path),
                 spoiler=story_request.spoiler,
