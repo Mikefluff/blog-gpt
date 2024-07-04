@@ -8,8 +8,8 @@ app = FastAPI()
 session_file_path = 'session_name'
 
 class PhoneNumber(BaseModel):
-    phone: str,
-    app_id: int,
+    phone: str
+    app_id: int
     app_hash: str
 
 class OTPVerification(BaseModel):
