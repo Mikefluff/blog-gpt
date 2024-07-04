@@ -7,6 +7,8 @@ app = FastAPI()
 
 session_file_path = 'session_name'
 
+client = TelegramClient()
+
 class PhoneNumber(BaseModel):
     phone: str
     app_id: int
@@ -38,8 +40,6 @@ async def generate_otp(phone_number: PhoneNumber):
 @app.post("/verify_otp")
 async def verify_otp(otp_verification: OTPVerification):
     try:
-        client = TelegramClient(session_file_path, api_id, api_hash)
-        await client.connect()
         await client.sign_in(
             otp_verification.phone,
             code=otp_verification.code,
@@ -58,8 +58,6 @@ async def verify_otp(otp_verification: OTPVerification):
 @app.post("/send_story")
 async def send_story(story_request: StoryRequest):
     try:
-        client = TelegramClient(session_file_path, api_id, api_hash)
-        await client.connect()
         if not await client.is_user_authorized():
             raise HTTPException(status_code=401, detail="Unauthorized. Please authenticate first.")
 
