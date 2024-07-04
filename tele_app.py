@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from telethon import TelegramClient, functions, types
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
