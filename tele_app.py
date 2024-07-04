@@ -6,6 +6,7 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import shutil
+import base64
 from uuid import uuid4
 
 
