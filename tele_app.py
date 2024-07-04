@@ -71,6 +71,32 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Mount the uploads directory
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
+class Base64Image(BaseModel):
+    filename: str
+    base64_data: str
+
+@app.post("/upload_base64_image")
+async def upload_base64_image(image: Base64Image):
+    try:
+        # Decode the base64 data
+        image_data = base64.b64decode(image.base64_data)
+        
+        # Generate a unique filename
+        file_extension = os.path.splitext(image.filename)[1]
+        unique_filename = f"{uuid4()}{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, unique_filename)
+        
+        # Save the file
+        with open(file_path, "wb") as file:
+            file.write(image_data)
+        
+        # Generate the URI
+        file_uri = f"/uploads/{unique_filename}"
+        
+        return {"file_uri": file_uri, "message": "Image uploaded successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/upload_image")
 async def upload_image(file: UploadFile = File(...)):
     try:
