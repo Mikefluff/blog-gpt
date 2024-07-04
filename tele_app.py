@@ -7,7 +7,7 @@ app = FastAPI()
 
 session_file_path = 'session_name'
 
-client = TelegramClient()
+client = ''
 
 class PhoneNumber(BaseModel):
     phone: str
