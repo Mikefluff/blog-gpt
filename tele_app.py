@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, HTTPException, Depends, Body, UploadFile, File
 from fastapi.staticfiles import StaticFiles
-from telethon import TelegramClient, functions, types
+from telethon import TelegramClient, functions, types, events
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 from telethon.tl.types import InputPeerUser, InputPeerChannel
