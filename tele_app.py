@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from telethon import TelegramClient, functions, types
+from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
