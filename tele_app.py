@@ -32,6 +32,10 @@ class StoryRequest(BaseModel):
     spoiler: bool = True
     ttl_seconds: int = 42
 
+class TwoFAPassword(BaseModel):
+    password: str
+    session_hash: str
+
 class TelegramClientManager:
     def __init__(self):
         self.clients = {}
