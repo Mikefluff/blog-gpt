@@ -91,7 +91,7 @@ async def upload_base64_image(image: Base64Image):
             file.write(image_data)
         
         # Generate the URI
-        file_uri = f"/uploads/{unique_filename}"
+        file_uri = f"uploads/{unique_filename}"
         
         return {"file_uri": file_uri, "message": "Image uploaded successfully"}
     except Exception as e:
