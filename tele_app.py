@@ -17,6 +17,9 @@ class APICredentials(BaseModel):
     app_id: int
     app_hash: str
 
+class BotToken(BaseModel):
+    token: str
+
 class SessionHash(BaseModel):
     hash: str
 
