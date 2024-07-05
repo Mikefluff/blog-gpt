@@ -192,7 +192,7 @@ async def create_session(phone_number: PhoneNumber):
         raise HTTPException(status_code=400, detail="API credentials not set. Please call /set_api_credentials first.")
     
     try:
-        session_hash = await client_manager.create_client(client_manager.app_id, client_manager.app_hash)
+        session_hash = await client_manager.create_client()
         client = await client_manager.get_client(session_hash)
         result = await client.send_code_request(phone_number.phone, force_sms=True)
         return {"session_hash": session_hash, "phone_code_hash": result.phone_code_hash}
