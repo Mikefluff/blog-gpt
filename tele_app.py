@@ -77,7 +77,7 @@ client_manager = TelegramClientManager()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    await client_manager.disconnect()
+    await client_manager.disconnect_all()
 
 app = FastAPI(lifespan=lifespan)
 
