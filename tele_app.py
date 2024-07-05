@@ -13,15 +13,15 @@ from uuid import uuid4
 
 app = FastAPI()
 
-session_file_path = 'session_name'
+class APICredentials(BaseModel):
+    app_id: int
+    app_hash: str
 
 class SessionHash(BaseModel):
     hash: str
 
 class PhoneNumber(BaseModel):
     phone: str
-    app_id: int
-    app_hash: str
 
 class OTPVerification(BaseModel):
     phone: str
@@ -48,18 +48,31 @@ class TelegramClientManager:
             raise HTTPException(status_code=400, detail="Session not found")
         return self.clients[session_hash]
 
-    async def create_client(self, app_id: int, app_hash: str, session_hash: str = None):
+    async def create_client(self, session_hash: str = None):
+        if not self.app_id or not self.app_hash:
+            raise ValueError("API credentials not set")
+        
         if session_hash and session_hash in self.clients:
             return session_hash
 
         session = StringSession(session_hash) if session_hash else StringSession()
-        client = TelegramClient(session, app_id, app_hash)
+        client = TelegramClient(session, self.app_id, self.app_hash)
         await client.connect()
 
         new_hash = session.save()
         self.clients[new_hash] = client
-        self.app_id = app_id
-        self.app_hash = app_hash
+        return new_hash
+
+    async def create_bot_client(self, bot_token: str):
+        if not self.app_id or not self.app_hash:
+            raise ValueError("API credentials not set")
+        
+        session = StringSession()
+        client = TelegramClient(session, self.app_id, self.app_hash)
+        await client.start(bot_token=bot_token)
+
+        new_hash = session.save()
+        self.clients[new_hash] = client
         return new_hash
 
     async def remove_client(self, session_hash: str):
@@ -94,6 +107,12 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 class Base64Image(BaseModel):
     filename: str
     base64_data: str
+
+@app.post("/set_api_credentials")
+async def set_api_credentials(credentials: APICredentials):
+    client_manager.app_id = credentials.app_id
+    client_manager.app_hash = credentials.app_hash
+    return {"message": "API credentials set successfully"}
 
 @app.post("/upload_base64_image")
 async def upload_base64_image(image: Base64Image):
@@ -148,16 +167,40 @@ async def verify_2fa(two_fa: TwoFAPassword):
 
 @app.post("/create_session")
 async def create_session(phone_number: PhoneNumber):
+    if not client_manager.app_id or not client_manager.app_hash:
+        raise HTTPException(status_code=400, detail="API credentials not set. Please call /set_api_credentials first.")
+    
     try:
-        session_hash = await client_manager.create_client(phone_number.app_id, phone_number.app_hash)
+        session_hash = await client_manager.create_client(client_manager.app_id, client_manager.app_hash)
         client = await client_manager.get_client(session_hash)
         result = await client.send_code_request(phone_number.phone, force_sms=True)
         return {"session_hash": session_hash, "phone_code_hash": result.phone_code_hash}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/create_bot_session")
+async def create_bot_session(bot_token: BotToken):
+    try:
+        session_hash = await client_manager.create_bot_client(bot_token.token)
+        client = await client_manager.get_client(session_hash)
+        bot_info = await client.get_me()
+        return {
+            "session_hash": session_hash,
+            "bot_info": {
+                "id": bot_info.id,
+                "first_name": bot_info.first_name,
+                "username": bot_info.username,
+                "bot": bot_info.bot
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/verify_otp")
-async def verify_otp(otp_verification: OTPVerification, session: SessionHash):
+async def verify_otp(
+    otp_verification: OTPVerification = Body(...),
+    session: SessionHash = Body(...)
+):
     try:
         client = await client_manager.get_client(session.hash)
         await client.sign_in(
@@ -168,7 +211,7 @@ async def verify_otp(otp_verification: OTPVerification, session: SessionHash):
         user = await client.get_me()
         return {"message": f"Authenticated as {user.first_name}", "session_hash": session.hash}
     except SessionPasswordNeededError:
-        raise HTTPException(status_code=401, detail="Two-step verification is enabled. Please provide the password.")
+        return {"message": "Two-step verification is enabled. Please provide the password.", "session_hash": session.hash}
     except PhoneCodeInvalidError:
         raise HTTPException(status_code=401, detail="Invalid code provided.")
     except Exception as e:
