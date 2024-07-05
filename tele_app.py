@@ -4,6 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from telethon import TelegramClient, functions, types
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
+from telethon.tl.types import InputPeerUser, InputPeerChannel
+from telethon.tl.functions.channels import InviteToChannelRequest
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import shutil
@@ -19,6 +21,15 @@ class APICredentials(BaseModel):
 
 class BotToken(BaseModel):
     token: str
+
+class MessageRequest(BaseModel):
+    session_hash: str
+    recipient: str  # This can be a username, user ID, or channel username
+    message: str
+
+class JoinChannelRequest(BaseModel):
+    session_hash: str
+    channel: str
 
 class SessionHash(BaseModel):
     hash: str
@@ -46,6 +57,11 @@ class TelegramClientManager:
         self.app_id = None
         self.app_hash = None
 
+    async def add_message_handler(self, client):
+        @client.on(events.NewMessage(pattern='/ping'))
+        async def ping_handler(event):
+            await event.reply('pong')
+
     async def get_client(self, session_hash: str):
         if session_hash not in self.clients:
             raise HTTPException(status_code=400, detail="Session not found")
@@ -64,6 +80,7 @@ class TelegramClientManager:
 
         new_hash = session.save()
         self.clients[new_hash] = client
+        await self.add_message_handler(client)
         return new_hash
 
     async def create_bot_client(self, bot_token: str):
@@ -76,6 +93,7 @@ class TelegramClientManager:
 
         new_hash = session.save()
         self.clients[new_hash] = client
+        await self.add_message_handler(client)
         return new_hash
 
     async def remove_client(self, session_hash: str):
@@ -237,6 +255,45 @@ async def send_story(story_request: StoryRequest, session: SessionHash):
             privacy_rules=[types.InputPrivacyValueAllowContacts()]
         ))
         return {"message": "Story sent successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/send_message")
+async def send_message(message_request: MessageRequest):
+    try:
+        client = await client_manager.get_client(message_request.session_hash)
+        
+        # Try to interpret the recipient as an integer (user ID) first
+        try:
+            recipient_id = int(message_request.recipient)
+            entity = InputPeerUser(recipient_id, 0)
+        except ValueError:
+            # If it's not an integer, treat it as a username or channel
+            entity = await client.get_entity(message_request.recipient)
+        
+        # Send the message
+        result = await client.send_message(entity, message_request.message)
+        
+        return {"message": "Message sent successfully", "message_id": result.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/join_channel")
+async def join_channel(request: JoinChannelRequest):
+    try:
+        client = await client_manager.get_client(request.session_hash)
+        
+        # Get the channel entity
+        channel = await client.get_entity(request.channel)
+        
+        # Join the channel
+        await client(InviteToChannelRequest(channel, [client.get_me()]))
+        
+        return {"message": f"Successfully joined channel {request.channel}"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
