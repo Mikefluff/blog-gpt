@@ -14,6 +14,9 @@ app = FastAPI()
 
 session_file_path = 'session_name'
 
+class SessionHash(BaseModel):
+    hash: str
+
 class PhoneNumber(BaseModel):
     phone: str
     app_id: int
@@ -31,26 +34,38 @@ class StoryRequest(BaseModel):
 
 class TelegramClientManager:
     def __init__(self):
-        self.client = None
+        self.clients = {}
         self.app_id = None
         self.app_hash = None
 
-    async def get_client(self):
-        if not self.client:
-            raise HTTPException(status_code=400, detail="Client not initialized")
-        return self.client
+    async def get_client(self, session_hash: str):
+        if session_hash not in self.clients:
+            raise HTTPException(status_code=400, detail="Session not found")
+        return self.clients[session_hash]
 
-    async def initialize_client(self, app_id: int, app_hash: str):
-        if self.client:
-            await self.client.disconnect()
+    async def create_client(self, app_id: int, app_hash: str, session_hash: str = None):
+        if session_hash and session_hash in self.clients:
+            return session_hash
+
+        session = StringSession(session_hash) if session_hash else StringSession()
+        client = TelegramClient(session, app_id, app_hash)
+        await client.connect()
+
+        new_hash = session.save()
+        self.clients[new_hash] = client
         self.app_id = app_id
         self.app_hash = app_hash
-        self.client = TelegramClient(session_file_path, app_id, app_hash)
-        await self.client.connect()
+        return new_hash
 
-    async def disconnect(self):
-        if self.client:
-            await self.client.disconnect()
+    async def remove_client(self, session_hash: str):
+        if session_hash in self.clients:
+            await self.clients[session_hash].disconnect()
+            del self.clients[session_hash]
+
+    async def disconnect_all(self):
+        for client in self.clients.values():
+            await client.disconnect()
+        self.clients.clear()
 
 client_manager = TelegramClientManager()
 
@@ -116,28 +131,37 @@ async def upload_image(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.post("/generate_otp")
-async def generate_otp(phone_number: PhoneNumber):
+@app.post("/verify_2fa")
+async def verify_2fa(two_fa: TwoFAPassword):
     try:
-        await client_manager.initialize_client(phone_number.app_id, phone_number.app_hash)
-        client = await get_client()
+        client = await client_manager.get_client(two_fa.session_hash)
+        await client.sign_in(password=two_fa.password)
+        user = await client.get_me()
+        return {"message": f"Authenticated as {user.first_name}", "session_hash": two_fa.session_hash}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/create_session")
+async def create_session(phone_number: PhoneNumber):
+    try:
+        session_hash = await client_manager.create_client(phone_number.app_id, phone_number.app_hash)
+        client = await client_manager.get_client(session_hash)
         result = await client.send_code_request(phone_number.phone, force_sms=True)
-        return {"phone_code_hash": result.phone_code_hash}
+        return {"session_hash": session_hash, "phone_code_hash": result.phone_code_hash}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/verify_otp")
-async def verify_otp(otp_verification: OTPVerification):
+async def verify_otp(otp_verification: OTPVerification, session: SessionHash):
     try:
-        client = await get_client()
+        client = await client_manager.get_client(session.hash)
         await client.sign_in(
             otp_verification.phone,
             code=otp_verification.code,
             phone_code_hash=otp_verification.phone_code_hash,
         )
         user = await client.get_me()
-        return {"message": f"Authenticated as {user.first_name}"}
+        return {"message": f"Authenticated as {user.first_name}", "session_hash": session.hash}
     except SessionPasswordNeededError:
         raise HTTPException(status_code=401, detail="Two-step verification is enabled. Please provide the password.")
     except PhoneCodeInvalidError:
@@ -146,8 +170,9 @@ async def verify_otp(otp_verification: OTPVerification):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/send_story")
-async def send_story(story_request: StoryRequest, client: TelegramClient = Depends(get_client)):
+async def send_story(story_request: StoryRequest, session: SessionHash):
     try:
+        client = await client_manager.get_client(session.hash)
         if not await client.is_user_authorized():
             raise HTTPException(status_code=401, detail="Unauthorized. Please authenticate first.")
         me = await client.get_me()    
